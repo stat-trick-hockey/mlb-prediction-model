@@ -1,0 +1,101 @@
+name: Daily MLB Predictions
+
+on:
+  schedule:
+    # Run at 10am ET (2pm UTC) — after probable pitchers are posted
+    - cron: '0 14 * * *'
+  workflow_dispatch:
+    inputs:
+      date:
+        description: 'Game date (YYYY-MM-DD). Leave blank for today.'
+        required: false
+        default: ''
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check if regular season
+        id: season_check
+        run: |
+          STATUS=$(python -c "from utils.season_gate import get_season_status; print(get_season_status())")
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+          echo "Season status: $STATUS"
+
+      - name: Run daily predictions
+        if: steps.season_check.outputs.status == 'regular_season' || steps.season_check.outputs.status == 'postseason' || github.event_name == 'workflow_dispatch'
+        env:
+          ODDS_API_KEY:    ${{ secrets.ODDS_API_KEY }}
+          WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
+        run: |
+          DATE="${{ github.event.inputs.date }}"
+          if [ -z "$DATE" ]; then
+            python predict/daily_predictions.py
+          else
+            python predict/daily_predictions.py --date "$DATE"
+          fi
+
+      - name: Skip message
+        if: steps.season_check.outputs.status != 'regular_season' && steps.season_check.outputs.status != 'postseason' && github.event_name != 'workflow_dispatch'
+        run: echo "⚾ Not regular season (${{ steps.season_check.outputs.status }}) — skipping to preserve API rate limits"
+
+      - name: Commit predictions output
+        if: steps.season_check.outputs.status == 'regular_season' || steps.season_check.outputs.status == 'postseason' || github.event_name == 'workflow_dispatch'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto: predictions for ${{ github.event.inputs.date || 'today' }}"
+          file_pattern: 'predict/output/*.csv predict/output/*.json predict/output/*.txt'
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
+
+  track_results:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Check if regular season
+        id: season_check
+        run: |
+          STATUS=$(python -c "from utils.season_gate import get_season_status; print(get_season_status())")
+          echo "status=$STATUS" >> $GITHUB_OUTPUT
+
+      - name: Track yesterday's results
+        if: steps.season_check.outputs.status == 'regular_season' || steps.season_check.outputs.status == 'postseason'
+        run: python predict/results_tracker.py
+
+      - name: Commit accuracy log
+        if: steps.season_check.outputs.status == 'regular_season' || steps.season_check.outputs.status == 'postseason'
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto: results tracking update"
+          file_pattern: 'predict/output/accuracy_log.csv'

@@ -1,0 +1,48 @@
+name: Monthly Model Retrain
+
+on:
+  schedule:
+    # 1st of every month at 6am ET (10am UTC)
+    - cron: '0 10 1 * *'
+  workflow_dispatch: {}
+
+jobs:
+  retrain:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Refresh FanGraphs data
+        run: python data/fetch_fangraphs.py
+
+      - name: Refresh Statcast data
+        run: python data/fetch_statcast.py
+
+      - name: Rebuild historical feature matrix
+        run: python features/build_feature_matrix.py
+
+      - name: Retrain O/U model
+        run: python models/train_ou.py
+
+      - name: Retrain moneyline model
+        run: python models/train_moneyline.py
+
+      - name: Retrain run line model
+        run: python models/train_runline.py
+
+      - name: Commit updated models
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto: monthly model retrain"
+          file_pattern: 'models/*.pkl data/processed/**/*.csv'
