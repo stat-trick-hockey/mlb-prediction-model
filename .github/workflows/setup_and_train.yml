@@ -1,0 +1,72 @@
+name: Initial Setup & Train Models
+
+on:
+  workflow_dispatch:
+    inputs:
+      seasons:
+        description: 'Comma-separated seasons to train on (e.g. 2022,2023,2024)'
+        required: false
+        default: '2022,2023,2024'
+
+jobs:
+  setup_and_train:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180  # 3 hours — Statcast download is slow
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Fetch FanGraphs data
+        run: python data/fetch_fangraphs.py
+        continue-on-error: false
+
+      - name: Fetch Statcast data
+        run: python data/fetch_statcast.py
+        continue-on-error: false
+
+      - name: Build historical feature matrix
+        run: python features/build_feature_matrix.py
+        continue-on-error: false
+
+      - name: Train O/U model
+        run: python models/train_ou.py
+        continue-on-error: false
+
+      - name: Train Moneyline model
+        run: python models/train_moneyline.py
+        continue-on-error: false
+
+      - name: Train Run Line model
+        run: python models/train_runline.py
+        continue-on-error: false
+
+      - name: Run backtest
+        run: python backtest/backtest.py
+        continue-on-error: true  # Don't fail the whole job if backtest errors
+
+      - name: Commit trained models and data
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Auto: initial model training complete"
+          file_pattern: |
+            models/*.pkl
+            data/processed/**/*.csv
+            backtest/results/*.png
+            backtest/results/*.csv
+          commit_user_name: github-actions[bot]
+          commit_user_email: github-actions[bot]@users.noreply.github.com
