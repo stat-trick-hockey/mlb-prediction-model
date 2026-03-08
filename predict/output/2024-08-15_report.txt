@@ -1,0 +1,14 @@
+═══════════════════════════════════════════════════════════════════════════
+  MLB PREDICTION REPORT
+═══════════════════════════════════════════════════════════════════════════
+
+── All Games ──
+  OAK @ NYM  |  NYM win: 59%  |  Proj total: 8.59
+  SEA @ DET  |  DET win: 40%  |  Proj total: 7.41
+  LAD @ MIL  |  MIL win: 51%  |  Proj total: 6.96
+  ATL @ SF  |  SF win: 59%  |  Proj total: 7.48
+  BOS @ BAL  |  BAL win: 59%  |  Proj total: 7.86
+  WSH @ PHI  |  PHI win: 59%  |  Proj total: 8.35
+  MIN @ TEX  |  TEX win: 59%  |  Proj total: 7.97
+
+═══════════════════════════════════════════════════════════════════════════
