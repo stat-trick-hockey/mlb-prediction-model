@@ -27,8 +27,7 @@ RL_PARAMS = {
     "min_child_weight":5,
     "reg_alpha":       0.3,
     "reg_lambda":      2.0,  # Stronger regularization for harder task
-    "use_label_encoder": False,
-    "eval_metric":    "logloss",
+        "eval_metric":    "logloss",
     "random_state":    42,
     "n_jobs":         -1,
 }

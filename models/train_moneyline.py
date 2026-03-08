@@ -29,8 +29,7 @@ ML_PARAMS = {
     "scale_pos_weight":1.0,  # adjust if class imbalance
     "reg_alpha":       0.2,
     "reg_lambda":      1.5,
-    "use_label_encoder": False,
-    "eval_metric":    "logloss",
+        "eval_metric":    "logloss",
     "random_state":    42,
     "n_jobs":         -1,
 }
