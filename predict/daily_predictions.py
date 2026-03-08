@@ -67,9 +67,11 @@ def run_daily_predictions(
     # ── Step 1: Schedule ──────────────────────────────────────────────────────
     print("1. Fetching schedule...")
     schedule = fetch_schedule(game_date)
-    schedule = schedule[schedule["status"].isin(["Preview", "Pre-Game", None])]
+    # For historical dates, games will be "Final" — include those for testing
+    upcoming_statuses = ["Preview", "Pre-Game", "Scheduled", "Final"]
+    schedule = schedule[schedule["status"].isin(upcoming_statuses)]
     if schedule.empty:
-        print(f"  No upcoming games found for {game_date}.")
+        print(f"  No games found for {game_date}.")
         return []
     print(f"  Found {len(schedule)} games: {', '.join(schedule['home_team_abb'].dropna().tolist())}")
     schedule.to_csv(f"data/raw/{game_date}/schedule.csv", index=False)
