@@ -1,0 +1,942 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MLB Predictions — Stat Trick</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Mono:wght@400;500&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg:        #0a0c0f;
+      --surface:   #111318;
+      --border:    #1e2229;
+      --green:     #00e87a;
+      --red:       #ff3b5c;
+      --yellow:    #ffe44d;
+      --blue:      #3b8eff;
+      --muted:     #4a5060;
+      --text:      #e8eaf0;
+      --subtext:   #7a8099;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 300;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Grid noise overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.015) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.015) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ── Header ── */
+    header {
+      position: relative;
+      z-index: 10;
+      padding: 36px 40px 24px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .logo {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .logo-eyebrow {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      letter-spacing: 0.2em;
+      color: var(--green);
+      text-transform: uppercase;
+    }
+
+    .logo-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(36px, 5vw, 56px);
+      letter-spacing: 0.04em;
+      line-height: 1;
+      color: var(--text);
+    }
+
+    .logo-title span {
+      color: var(--green);
+    }
+
+    .header-meta {
+      text-align: right;
+    }
+
+    .date-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--subtext);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .date-value {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 22px;
+      letter-spacing: 0.06em;
+      color: var(--text);
+      margin-top: 2px;
+    }
+
+    /* ── Summary bar ── */
+    .summary-bar {
+      position: relative;
+      z-index: 10;
+      display: flex;
+      gap: 1px;
+      padding: 0 40px;
+      margin: 24px 0;
+    }
+
+    .stat-pill {
+      flex: 1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      padding: 14px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .stat-pill:first-child { border-radius: 8px 0 0 8px; }
+    .stat-pill:last-child  { border-radius: 0 8px 8px 0; }
+
+    .stat-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.18em;
+      color: var(--subtext);
+      text-transform: uppercase;
+    }
+
+    .stat-value {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 28px;
+      letter-spacing: 0.04em;
+      line-height: 1;
+    }
+
+    .stat-value.green  { color: var(--green); }
+    .stat-value.yellow { color: var(--yellow); }
+    .stat-value.blue   { color: var(--blue); }
+    .stat-value.white  { color: var(--text); }
+
+    /* ── Main layout ── */
+    main {
+      position: relative;
+      z-index: 10;
+      padding: 0 40px 60px;
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      gap: 24px;
+      max-width: 1400px;
+    }
+
+    /* ── Section headers ── */
+    .section-header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 18px;
+      letter-spacing: 0.1em;
+      color: var(--subtext);
+      text-transform: uppercase;
+    }
+
+    .section-line {
+      flex: 1;
+      height: 1px;
+      background: var(--border);
+    }
+
+    /* ── Game cards ── */
+    .games-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .game-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 16px;
+      align-items: center;
+      transition: border-color 0.2s, transform 0.2s;
+      animation: fadeUp 0.4s ease both;
+    }
+
+    .game-card:hover {
+      border-color: var(--muted);
+      transform: translateY(-1px);
+    }
+
+    .game-card.has-edge {
+      border-color: rgba(0, 232, 122, 0.3);
+      background: linear-gradient(135deg, rgba(0,232,122,0.04) 0%, var(--surface) 60%);
+    }
+
+    .game-card.has-edge:hover {
+      border-color: rgba(0, 232, 122, 0.5);
+    }
+
+    /* matchup row */
+    .matchup {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 14px;
+    }
+
+    .team-block {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      min-width: 52px;
+    }
+
+    .team-abb {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 26px;
+      letter-spacing: 0.06em;
+      line-height: 1;
+    }
+
+    .team-record {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      color: var(--subtext);
+    }
+
+    .vs-divider {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+    }
+
+    .pitcher-info {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .pitcher-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .pitcher-side {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+      width: 14px;
+    }
+
+    .pitcher-name {
+      font-size: 12px;
+      color: var(--subtext);
+      font-weight: 400;
+    }
+
+    .pitcher-stat {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--muted);
+      margin-left: auto;
+    }
+
+    /* prob bars */
+    .prob-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .prob-row {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .prob-labels {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .prob-market {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      color: var(--subtext);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .prob-numbers {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--text);
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .prob-bar-track {
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+
+    .prob-bar-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .prob-bar-fill.ml  { background: var(--blue); }
+    .prob-bar-fill.ou  { background: var(--yellow); }
+    .prob-bar-fill.rl  { background: var(--green); }
+
+    /* edge badges */
+    .edge-badges {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 140px;
+    }
+
+    .edge-badge {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      border: 1px solid transparent;
+    }
+
+    .edge-badge.active {
+      background: rgba(0, 232, 122, 0.08);
+      border-color: rgba(0, 232, 122, 0.25);
+    }
+
+    .edge-badge.inactive {
+      background: rgba(255,255,255,0.02);
+      border-color: var(--border);
+      opacity: 0.5;
+    }
+
+    .badge-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      letter-spacing: 0.1em;
+      color: var(--subtext);
+      text-transform: uppercase;
+    }
+
+    .badge-edge {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .badge-edge.positive { color: var(--green); }
+    .badge-edge.negative { color: var(--muted); }
+
+    .badge-kelly {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      color: var(--subtext);
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .sidebar-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+    }
+
+    .sidebar-card-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 14px;
+      letter-spacing: 0.12em;
+      color: var(--subtext);
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    /* top picks */
+    .pick-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .pick-item:last-child { border-bottom: none; }
+
+    .pick-matchup {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 16px;
+      letter-spacing: 0.04em;
+    }
+
+    .pick-detail {
+      font-family: 'DM Mono', monospace;
+      font-size: 9px;
+      color: var(--subtext);
+      margin-top: 2px;
+    }
+
+    .pick-edge-val {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 22px;
+      color: var(--green);
+      letter-spacing: 0.04em;
+    }
+
+    /* accuracy log */
+    .accuracy-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .accuracy-row:last-child { border-bottom: none; }
+
+    .accuracy-label {
+      font-family: 'DM Mono', monospace;
+      font-size: 10px;
+      color: var(--subtext);
+      letter-spacing: 0.08em;
+    }
+
+    .accuracy-val {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text);
+    }
+
+    /* season gate banner */
+    .offseason-banner {
+      grid-column: 1 / -1;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 48px;
+      text-align: center;
+      display: none;
+    }
+
+    .offseason-banner.visible { display: block; }
+
+    .offseason-icon {
+      font-size: 48px;
+      margin-bottom: 16px;
+    }
+
+    .offseason-title {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 32px;
+      letter-spacing: 0.06em;
+      color: var(--subtext);
+      margin-bottom: 8px;
+    }
+
+    .offseason-sub {
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.1em;
+    }
+
+    /* loading state */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 48px;
+      color: var(--subtext);
+      font-family: 'DM Mono', monospace;
+      font-size: 11px;
+      letter-spacing: 0.1em;
+    }
+
+    .spinner {
+      width: 16px;
+      height: 16px;
+      border: 2px solid var(--border);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    /* animations */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(12px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* responsive */
+    @media (max-width: 900px) {
+      header       { padding: 24px 20px 18px; }
+      .summary-bar { padding: 0 20px; }
+      main         { padding: 0 20px 40px; grid-template-columns: 1fr; }
+      .sidebar     { order: -1; }
+    }
+
+    @media (max-width: 500px) {
+      .stat-pill  { padding: 10px 12px; }
+      .stat-value { font-size: 22px; }
+      .game-card  { grid-template-columns: 1fr; }
+      .edge-badges { flex-direction: row; flex-wrap: wrap; min-width: unset; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <span class="logo-eyebrow">Stat Trick Hockey</span>
+      <h1 class="logo-title">MLB <span>Picks</span></h1>
+    </div>
+    <div class="header-meta">
+      <div class="date-label">Today's Slate</div>
+      <div class="date-value" id="dateDisplay">—</div>
+    </div>
+  </header>
+
+  <!-- Summary bar -->
+  <div class="summary-bar">
+    <div class="stat-pill">
+      <span class="stat-label">Games Today</span>
+      <span class="stat-value white" id="statGames">—</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-label">Edge Games</span>
+      <span class="stat-value green" id="statEdge">—</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-label">Avg Proj Total</span>
+      <span class="stat-value yellow" id="statAvgTotal">—</span>
+    </div>
+    <div class="stat-pill">
+      <span class="stat-label">Model ML Acc (30d)</span>
+      <span class="stat-value blue" id="statAccuracy">—</span>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <main>
+
+    <!-- Games column -->
+    <div>
+      <div class="section-header">
+        <span class="section-title">Today's Games</span>
+        <div class="section-line"></div>
+      </div>
+      <div class="games-grid" id="gamesGrid">
+        <div class="loading">
+          <div class="spinner"></div>
+          LOADING PREDICTIONS
+        </div>
+      </div>
+
+      <!-- Offseason banner (shown when no games) -->
+      <div class="offseason-banner" id="offseasonBanner">
+        <div class="offseason-icon">⚾</div>
+        <div class="offseason-title">Spring Training</div>
+        <div class="offseason-sub">Regular season predictions begin opening day</div>
+      </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="sidebar">
+
+      <!-- Top edge picks -->
+      <div class="sidebar-card">
+        <div class="sidebar-card-title">Top Edge Picks</div>
+        <div id="topPicks">
+          <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px 0;">
+            Loading...
+          </div>
+        </div>
+      </div>
+
+      <!-- Rolling accuracy -->
+      <div class="sidebar-card">
+        <div class="sidebar-card-title">30-Day Model Accuracy</div>
+        <div id="accuracyLog">
+          <div class="accuracy-row">
+            <span class="accuracy-label">MONEYLINE</span>
+            <span class="accuracy-val" id="accML">—</span>
+          </div>
+          <div class="accuracy-row">
+            <span class="accuracy-label">OVER / UNDER</span>
+            <span class="accuracy-val" id="accOU">—</span>
+          </div>
+          <div class="accuracy-row">
+            <span class="accuracy-label">RUN LINE</span>
+            <span class="accuracy-val" id="accRL">—</span>
+          </div>
+          <div class="accuracy-row">
+            <span class="accuracy-label">TOTAL RUNS MAE</span>
+            <span class="accuracy-val" id="accMAE">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Last updated -->
+      <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:0.1em;text-align:center;padding: 4px 0;">
+        UPDATED DAILY AT 10AM ET
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    // ── Date display ──────────────────────────────────────────────────────────
+    const today = new Date();
+    const dateStr = today.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+    document.getElementById('dateDisplay').textContent = dateStr.toUpperCase();
+
+    // ── Fetch predictions JSON ────────────────────────────────────────────────
+    // Looks for today's prediction file committed by GitHub Actions
+    function getTodayDateStr() {
+      return today.toISOString().split('T')[0]; // YYYY-MM-DD
+    }
+
+    async function loadPredictions() {
+      const dateKey = getTodayDateStr();
+      const url = `predict/output/${dateKey}_predictions.json`;
+
+      try {
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error(`No predictions for ${dateKey}`);
+        const data = await resp.json();
+        renderGames(data);
+        renderSummary(data);
+        renderTopPicks(data);
+      } catch (err) {
+        // Try yesterday's file as fallback
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yKey = yesterday.toISOString().split('T')[0];
+        try {
+          const resp2 = await fetch(`predict/output/${yKey}_predictions.json`);
+          if (!resp2.ok) throw new Error('No recent predictions found');
+          const data = await resp2.json();
+          renderGames(data);
+          renderSummary(data);
+          renderTopPicks(data);
+          document.getElementById('dateDisplay').textContent =
+            yesterday.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' }).toUpperCase()
+            + ' (YESTERDAY)';
+        } catch {
+          showOffseason();
+        }
+      }
+    }
+
+    async function loadAccuracyLog() {
+      try {
+        const resp = await fetch('predict/output/accuracy_log.csv');
+        if (!resp.ok) return;
+        const text = await resp.text();
+        const rows = text.trim().split('\n').slice(1); // skip header
+        if (rows.length === 0) return;
+
+        // Last 30 rows
+        const recent = rows.slice(-30).map(r => {
+          const cols = r.split(',');
+          return {
+            ml_accuracy: parseFloat(cols[2]) || null,
+            ou_accuracy: parseFloat(cols[3]) || null,
+            rl_accuracy: parseFloat(cols[4]) || null,
+            total_mae:   parseFloat(cols[5]) || null,
+          };
+        });
+
+        const avg = key => {
+          const vals = recent.map(r => r[key]).filter(v => v !== null && !isNaN(v));
+          return vals.length ? vals.reduce((a,b) => a+b, 0) / vals.length : null;
+        };
+
+        const mlAcc = avg('ml_accuracy');
+        const ouAcc = avg('ou_accuracy');
+        const rlAcc = avg('rl_accuracy');
+        const mae   = avg('total_mae');
+
+        if (mlAcc) {
+          document.getElementById('accML').textContent = `${(mlAcc*100).toFixed(1)}%`;
+          document.getElementById('statAccuracy').textContent = `${(mlAcc*100).toFixed(1)}%`;
+        }
+        if (ouAcc) document.getElementById('accOU').textContent = `${(ouAcc*100).toFixed(1)}%`;
+        if (rlAcc) document.getElementById('accRL').textContent = `${(rlAcc*100).toFixed(1)}%`;
+        if (mae)   document.getElementById('accMAE').textContent = `${mae.toFixed(2)} runs`;
+
+      } catch(e) { /* accuracy log not available yet */ }
+    }
+
+    // ── Render games ──────────────────────────────────────────────────────────
+    function renderGames(games) {
+      const grid = document.getElementById('gamesGrid');
+      if (!games || games.length === 0) {
+        showOffseason();
+        return;
+      }
+
+      grid.innerHTML = '';
+
+      // Sort: edge games first
+      const sorted = [...games].sort((a, b) => (b.any_edge ? 1 : 0) - (a.any_edge ? 1 : 0));
+
+      sorted.forEach((game, i) => {
+        const card = buildGameCard(game, i);
+        grid.appendChild(card);
+      });
+
+      // Animate bars after render
+      setTimeout(() => {
+        document.querySelectorAll('.prob-bar-fill').forEach(bar => {
+          bar.style.width = bar.dataset.width + '%';
+        });
+      }, 100);
+    }
+
+    function buildGameCard(game, index) {
+      const hasEdge = game.any_edge;
+      const mlHome  = game.home_win_prob  ? (game.home_win_prob  * 100).toFixed(0) : '—';
+      const mlAway  = game.away_win_prob  ? (game.away_win_prob  * 100).toFixed(0) : '—';
+      const overPct = game.over_prob      ? (game.over_prob      * 100).toFixed(0) : '—';
+      const rlHome  = game.home_covers_prob ? (game.home_covers_prob * 100).toFixed(0) : '—';
+
+      const mlEdge  = formatEdge(game.ml_home_edge || game.ml_away_edge);
+      const ouEdge  = formatEdge(game.ou_over_edge || game.ou_under_edge);
+      const rlEdge  = formatEdge(game.rl_home_edge);
+
+      const mlActive = game.ml_home_flag || game.ml_away_flag;
+      const ouActive = game.ou_over_flag || game.ou_under_flag;
+      const rlActive = game.rl_home_flag;
+
+      const homeTeam = game.home_team_abb || '???';
+      const awayTeam = game.away_team_abb || '???';
+      const homePitcher = game.home_pitcher || 'TBD';
+      const awayPitcher = game.away_pitcher || 'TBD';
+      const projTotal   = game.predicted_total ? game.predicted_total.toFixed(1) : '—';
+      const ouLine      = game.ou_total ? `O/U ${game.ou_total}` : '';
+
+      const wind = game.wind_out_to_cf && Math.abs(game.wind_out_to_cf) > 5
+        ? `${game.wind_out_to_cf > 0 ? '↑' : '↓'} ${Math.abs(game.wind_out_to_cf).toFixed(0)} mph to CF`
+        : '';
+
+      const card = document.createElement('div');
+      card.className = `game-card${hasEdge ? ' has-edge' : ''}`;
+      card.style.animationDelay = `${index * 0.06}s`;
+
+      card.innerHTML = `
+        <div>
+          <div class="matchup">
+            <div class="team-block">
+              <span class="team-abb">${awayTeam}</span>
+              <span class="team-record">AWAY</span>
+            </div>
+            <span class="vs-divider">@</span>
+            <div class="team-block">
+              <span class="team-abb">${homeTeam}</span>
+              <span class="team-record">HOME</span>
+            </div>
+            <div class="pitcher-info">
+              <div class="pitcher-row">
+                <span class="pitcher-side">A</span>
+                <span class="pitcher-name">${awayPitcher}</span>
+              </div>
+              <div class="pitcher-row">
+                <span class="pitcher-side">H</span>
+                <span class="pitcher-name">${homePitcher}</span>
+                ${wind ? `<span class="pitcher-stat">${wind}</span>` : ''}
+              </div>
+            </div>
+          </div>
+
+          <div class="prob-section">
+            <div class="prob-row">
+              <div class="prob-labels">
+                <span class="prob-market">ML — ${homeTeam} win</span>
+                <span class="prob-numbers">
+                  <span>${awayTeam} ${mlAway}%</span>
+                  <span style="color:var(--muted)">|</span>
+                  <span>${homeTeam} ${mlHome}%</span>
+                </span>
+              </div>
+              <div class="prob-bar-track">
+                <div class="prob-bar-fill ml" data-width="${mlHome}" style="width:0%"></div>
+              </div>
+            </div>
+
+            <div class="prob-row">
+              <div class="prob-labels">
+                <span class="prob-market">O/U ${ouLine} — proj ${projTotal} runs</span>
+                <span class="prob-numbers">OVER ${overPct}%</span>
+              </div>
+              <div class="prob-bar-track">
+                <div class="prob-bar-fill ou" data-width="${overPct}" style="width:0%"></div>
+              </div>
+            </div>
+
+            <div class="prob-row">
+              <div class="prob-labels">
+                <span class="prob-market">RL — ${homeTeam} -1.5</span>
+                <span class="prob-numbers">${rlHome}%</span>
+              </div>
+              <div class="prob-bar-track">
+                <div class="prob-bar-fill rl" data-width="${rlHome}" style="width:0%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="edge-badges">
+          <div class="edge-badge ${mlActive ? 'active' : 'inactive'}">
+            <span class="badge-label">ML</span>
+            <span class="badge-edge ${mlActive ? 'positive' : 'negative'}">${mlEdge}</span>
+          </div>
+          <div class="edge-badge ${ouActive ? 'active' : 'inactive'}">
+            <span class="badge-label">O/U</span>
+            <span class="badge-edge ${ouActive ? 'positive' : 'negative'}">${ouEdge}</span>
+          </div>
+          <div class="edge-badge ${rlActive ? 'active' : 'inactive'}">
+            <span class="badge-label">RL</span>
+            <span class="badge-edge ${rlActive ? 'positive' : 'negative'}">${rlEdge}</span>
+          </div>
+        </div>
+      `;
+
+      return card;
+    }
+
+    // ── Render summary bar ────────────────────────────────────────────────────
+    function renderSummary(games) {
+      document.getElementById('statGames').textContent = games.length;
+      document.getElementById('statEdge').textContent  = games.filter(g => g.any_edge).length;
+
+      const totals = games.map(g => g.predicted_total).filter(Boolean);
+      const avg = totals.length ? totals.reduce((a,b) => a+b, 0) / totals.length : null;
+      document.getElementById('statAvgTotal').textContent = avg ? avg.toFixed(1) : '—';
+    }
+
+    // ── Render top picks ──────────────────────────────────────────────────────
+    function renderTopPicks(games) {
+      const container = document.getElementById('topPicks');
+      const edgeGames = games.filter(g => g.any_edge);
+
+      if (edgeGames.length === 0) {
+        container.innerHTML = `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px 0;">No edge games today</div>`;
+        return;
+      }
+
+      // Find best edge per game
+      const picks = edgeGames.map(g => {
+        const edges = [
+          { label: `${g.home_team_abb} ML`, val: g.ml_home_edge, flag: g.ml_home_flag },
+          { label: `${g.away_team_abb} ML`, val: g.ml_away_edge, flag: g.ml_away_flag },
+          { label: `OVER ${g.ou_total}`,    val: g.ou_over_edge,  flag: g.ou_over_flag },
+          { label: `UNDER ${g.ou_total}`,   val: g.ou_under_edge, flag: g.ou_under_flag },
+          { label: `${g.home_team_abb} -1.5`,val: g.rl_home_edge, flag: g.rl_home_flag },
+        ].filter(e => e.flag && e.val);
+
+        const best = edges.sort((a,b) => b.val - a.val)[0];
+        return { game: g, best };
+      }).filter(p => p.best).sort((a,b) => b.best.val - a.best.val).slice(0, 5);
+
+      container.innerHTML = picks.map(p => `
+        <div class="pick-item">
+          <div>
+            <div class="pick-matchup">${p.game.away_team_abb} @ ${p.game.home_team_abb}</div>
+            <div class="pick-detail">${p.best.label}</div>
+          </div>
+          <div class="pick-edge-val">+${(p.best.val * 100).toFixed(1)}%</div>
+        </div>
+      `).join('');
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function formatEdge(val) {
+      if (val === null || val === undefined || isNaN(val)) return '—';
+      const pct = (val * 100).toFixed(1);
+      return val > 0 ? `+${pct}%` : `${pct}%`;
+    }
+
+    function showOffseason() {
+      document.getElementById('gamesGrid').innerHTML = '';
+      document.getElementById('offseasonBanner').classList.add('visible');
+      document.getElementById('statGames').textContent   = '0';
+      document.getElementById('statEdge').textContent    = '0';
+      document.getElementById('statAvgTotal').textContent = '—';
+      document.getElementById('topPicks').innerHTML =
+        `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px 0;">Season hasn't started yet</div>`;
+    }
+
+    // ── Init ──────────────────────────────────────────────────────────────────
+    loadPredictions();
+    loadAccuracyLog();
+  </script>
+</body>
+</html>
