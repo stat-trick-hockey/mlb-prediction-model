@@ -186,11 +186,17 @@ def _predict_period(
         sigma = 2.5
         over_prob = 1 - stats.norm.cdf(ou_line + 0.5, loc=predicted_total, scale=sigma)
 
-        # Mock odds if not in data (use typical market)
+        # Mock odds if not in data — use model probability to generate
+        # realistic odds so we don't assume a fixed price for every game
         game_dict = game.to_dict()
         if pd.isna(game_dict.get("ml_home")):
-            game_dict["ml_home"]      = -120
-            game_dict["ml_away"]      = +105
+            # Convert model prob back to odds with typical 4.5% vig
+            home_vig_prob = home_win_prob * 1.045
+            away_vig_prob = (1 - home_win_prob) * 1.045
+            ml_home = -round(home_vig_prob / (1 - home_vig_prob) * 100) if home_win_prob > 0.5 else round((1 - home_vig_prob) / home_vig_prob * 100)
+            ml_away = -round(away_vig_prob / (1 - away_vig_prob) * 100) if home_win_prob < 0.5 else round((1 - away_vig_prob) / away_vig_prob * 100)
+            game_dict["ml_home"]      = float(ml_home)
+            game_dict["ml_away"]      = float(ml_away)
             game_dict["ou_total"]     = 9.0
             game_dict["ou_over_odds"] = -110
             game_dict["ou_under_odds"]= -110
@@ -257,7 +263,7 @@ def _simulate_best_bet(edge, bankroll, actual_win, actual_total, actual_rl, game
     # Pick highest Kelly
     best = max(candidates, key=lambda x: x[2])
     side, odds, kelly = best
-    stake = bankroll * min(kelly * 0.25, 0.05)  # Quarter-Kelly, max 5%
+    stake = bankroll * min(kelly * 0.20, 0.02)  # Fifth-Kelly, max 2% per bet
 
     # Resolve bet
     won = _resolve_bet(side, odds, actual_win, actual_total, game_dict.get("ou_total", 9.0), actual_rl)
