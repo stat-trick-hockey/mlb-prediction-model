@@ -43,7 +43,8 @@ def run_backtest(
 
     # Build run line target
     if "target_home_score" in df.columns and "target_away_score" in df.columns:
-        df["target_runline"] = ((df["target_home_score"] - df["target_away_score"]) >= 2).astype(int)
+        df = df.copy()  # defragment before adding columns
+    df["target_runline"] = ((df["target_home_score"] - df["target_away_score"]) >= 2).astype(int)
     else:
         df["target_runline"] = df.get("target_home_win", 0)
 
@@ -126,18 +127,16 @@ def run_backtest(
 def _train_period_models(train_data: pd.DataFrame, feature_cols: list) -> dict:
     """Quickly train XGBoost models for one period. Returns dict of models."""
     from xgboost import XGBClassifier, XGBRegressor
-    from sklearn.calibration import CalibratedClassifierCV
+    from models.calibrate import calibrate_classifier
 
     X = train_data[feature_cols].fillna(train_data[feature_cols].median())
 
     # Moneyline
     y_ml = train_data["target_home_win"].dropna()
     ml_model = XGBClassifier(n_estimators=200, max_depth=4, learning_rate=0.08,
-                              random_state=42, n_jobs=-1, eval_metric="logloss",
-                              use_label_encoder=False)
+                              random_state=42, n_jobs=-1, eval_metric="logloss")
     ml_model.fit(X.loc[y_ml.index], y_ml, verbose=False)
-    ml_cal = CalibratedClassifierCV(ml_model, method="isotonic", cv="prefit")
-    ml_cal.fit(X.loc[y_ml.index], y_ml)
+    ml_cal = calibrate_classifier(ml_model, X.loc[y_ml.index], y_ml, method="isotonic")
 
     # O/U
     y_ou = train_data["target_total_runs"].dropna()
@@ -148,11 +147,9 @@ def _train_period_models(train_data: pd.DataFrame, feature_cols: list) -> dict:
     # Run line
     y_rl = train_data["target_runline"].dropna()
     rl_model = XGBClassifier(n_estimators=200, max_depth=4, learning_rate=0.08,
-                              random_state=42, n_jobs=-1, eval_metric="logloss",
-                              use_label_encoder=False)
+                              random_state=42, n_jobs=-1, eval_metric="logloss")
     rl_model.fit(X.loc[y_rl.index], y_rl, verbose=False)
-    rl_cal = CalibratedClassifierCV(rl_model, method="isotonic", cv="prefit")
-    rl_cal.fit(X.loc[y_rl.index], y_rl)
+    rl_cal = calibrate_classifier(rl_model, X.loc[y_rl.index], y_rl, method="isotonic")
 
     return {"moneyline": ml_cal, "ou": ou_model, "runline": rl_cal}
 
