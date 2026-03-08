@@ -28,6 +28,7 @@ PARK_FACTORS = {
     "SD":  96,
     "SEA": 96,
     "OAK": 96,
+    "ATH": 98,   # Sutter Health Park, Sacramento (2025 estimate)
     "PIT": 95,
     "LAA": 95,
     "TOR": 95,
@@ -45,11 +46,14 @@ OUTDOOR_PARKS = {
 }
 
 # MLB Stats API team abbreviation → team ID
+# Note: Athletics moved to Sacramento for 2025 — API may use "ATH" or "OAK"
+# Keep OAK for historical data; ATH is the 2025 Sacramento entry
 TEAM_IDS = {
     "ARI": 109, "ATL": 144, "BAL": 110, "BOS": 111, "CHC": 112,
     "CWS": 145, "CIN": 113, "CLE": 114, "COL": 115, "DET": 116,
     "HOU": 117, "KC":  118, "LAA": 108, "LAD": 119, "MIA": 146,
     "MIL": 158, "MIN": 142, "NYM": 121, "NYY": 147, "OAK": 133,
+    "ATH": 133,  # Sacramento Athletics (2025+) — same MLB team ID as OAK
     "PHI": 143, "PIT": 134, "SD":  135, "SF":  137, "SEA": 136,
     "STL": 138, "TB":  139, "TEX": 140, "TOR": 141, "WSH": 120,
 }
@@ -78,6 +82,7 @@ VENUE_TO_TEAM = {
     "Citi Field": "NYM",
     "Yankee Stadium": "NYY",
     "Oakland Coliseum": "OAK",
+    "Sutter Health Park": "ATH",  # Sacramento Athletics 2025
     "Citizens Bank Park": "PHI",
     "PNC Park": "PIT",
     "Petco Park": "SD",
@@ -101,7 +106,7 @@ MIN_KELLY_FRACTION = 0.01    # 1% minimum Kelly bet size to display
 MAX_KELLY_FRACTION = 0.10    # Cap Kelly at 10% of bankroll
 
 # Training seasons
-TRAINING_SEASONS = [2022, 2023, 2024]
+TRAINING_SEASONS = [2022, 2023, 2024]  # Add 2025 after first month of season
 VALIDATION_SEASON = 2024
 
 # Rolling windows
