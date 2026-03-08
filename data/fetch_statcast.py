@@ -2,6 +2,9 @@
 data/fetch_statcast.py
 Pulls Statcast metrics (xwOBA, barrel%, hard-hit%, exit velocity)
 per team and pitcher via pybaseball / Baseball Savant.
+
+Barrel is computed from launch_speed + launch_angle if the column
+is missing from the raw pull (common in some date ranges).
 """
 
 import pandas as pd
@@ -19,6 +22,8 @@ try:
 except ImportError:
     PYBASEBALL_AVAILABLE = False
     print("WARNING: pybaseball not installed.")
+
+from data.barrel_calc import ensure_barrel_column
 
 
 # ── Team-level Statcast aggregation ───────────────────────────────────────────
@@ -40,15 +45,18 @@ def fetch_team_statcast(
     print(f"  Fetching Statcast data {start_date} → {end_date}...")
     df = statcast(start_dt=start_date, end_dt=end_date)
 
-    if df.empty:
+    if df is None or df.empty:
         return pd.DataFrame()
+
+    # Ensure barrel column exists (compute if missing)
+    df = ensure_barrel_column(df)
 
     # Only batted balls for quality-of-contact metrics
     batted = df[df["type"] == "X"].copy()
+    if batted.empty:
+        return pd.DataFrame()
 
     if as_pitcher:
-        group_col = "pitcher_team"  # not directly in statcast; join via pitcher id
-        # Simpler: group by home_team / away_team based on inning_topbot
         batted["fielding_team"] = np.where(
             batted["inning_topbot"] == "Top",
             batted["home_team"],
@@ -63,16 +71,37 @@ def fetch_team_statcast(
         )
         group_col = "batting_team"
 
-    agg = batted.groupby(group_col).agg(
-        statcast_xwoba         = ("estimated_woba_using_speedangle", "mean"),
-        statcast_barrel_pct    = ("barrel", "mean"),
-        statcast_hard_hit_pct  = ("launch_speed", lambda x: (x >= 95).mean()),
-        statcast_avg_ev        = ("launch_speed", "mean"),
-        statcast_avg_la        = ("launch_angle", "mean"),
-        statcast_n_batted      = ("launch_speed", "count"),
-    ).reset_index()
+    # Build aggregation dict — only include columns that exist
+    agg_dict = {}
+
+    if "estimated_woba_using_speedangle" in batted.columns:
+        agg_dict["statcast_xwoba"] = ("estimated_woba_using_speedangle", "mean")
+
+    # barrel is now guaranteed by ensure_barrel_column
+    if "barrel" in batted.columns:
+        agg_dict["statcast_barrel_pct"] = ("barrel", "mean")
+
+    if "launch_speed" in batted.columns:
+        agg_dict["statcast_hard_hit_pct"] = ("launch_speed", lambda x: (x >= 95).mean())
+        agg_dict["statcast_avg_ev"]        = ("launch_speed", "mean")
+        agg_dict["statcast_n_batted"]      = ("launch_speed", "count")
+
+    if "launch_angle" in batted.columns:
+        agg_dict["statcast_avg_la"] = ("launch_angle", "mean")
+
+    if not agg_dict:
+        print("  WARNING: No usable Statcast columns found in this date range")
+        return pd.DataFrame()
+
+    agg = batted.groupby(group_col).agg(**agg_dict).reset_index()
     agg.columns.name = None
     agg = agg.rename(columns={group_col: "team_abb"})
+
+    # Guarantee all expected output columns exist
+    for col in ["statcast_xwoba", "statcast_barrel_pct", "statcast_hard_hit_pct",
+                "statcast_avg_ev", "statcast_avg_la", "statcast_n_batted"]:
+        if col not in agg.columns:
+            agg[col] = np.nan
 
     return agg
 
@@ -91,19 +120,25 @@ def fetch_pitcher_statcast(
 
     df = statcast_pitcher(start_dt=start_date, end_dt=end_date, player_id=pitcher_id)
 
-    if df.empty:
+    if df is None or df.empty:
         return {}
+
+    df = ensure_barrel_column(df)
 
     batted = df[df["type"] == "X"]
     if batted.empty:
         return {}
 
-    return {
-        "p_statcast_xwoba":        batted["estimated_woba_using_speedangle"].mean(),
-        "p_statcast_barrel_pct":   batted["barrel"].mean() if "barrel" in batted else np.nan,
-        "p_statcast_hard_hit_pct": (batted["launch_speed"] >= 95).mean(),
-        "p_statcast_avg_ev":       batted["launch_speed"].mean(),
-    }
+    result = {}
+    if "estimated_woba_using_speedangle" in batted.columns:
+        result["p_statcast_xwoba"] = batted["estimated_woba_using_speedangle"].mean()
+    if "barrel" in batted.columns:
+        result["p_statcast_barrel_pct"] = batted["barrel"].mean()
+    if "launch_speed" in batted.columns:
+        result["p_statcast_hard_hit_pct"] = (batted["launch_speed"] >= 95).mean()
+        result["p_statcast_avg_ev"]        = batted["launch_speed"].mean()
+
+    return result
 
 
 def fetch_rolling_team_statcast(
@@ -119,6 +154,8 @@ def fetch_rolling_team_statcast(
     end_str = end.strftime("%Y-%m-%d")
 
     df = fetch_team_statcast(start, end_str, as_pitcher=False)
+    if df.empty:
+        return {}
     row = df[df["team_abb"] == team_abb]
     if row.empty:
         return {}
@@ -153,13 +190,16 @@ def save_season_statcast(season: int, chunk_days: int = 30):
             batting_agg  = fetch_team_statcast(chunk_start_str, chunk_end_str, as_pitcher=False)
             pitching_agg = fetch_team_statcast(chunk_start_str, chunk_end_str, as_pitcher=True)
 
-            batting_agg["period_start"]  = chunk_start_str
-            pitching_agg["period_start"] = chunk_start_str
-            batting_agg["type"]  = "batting"
-            pitching_agg["type"] = "pitching"
+            if not batting_agg.empty:
+                batting_agg["period_start"] = chunk_start_str
+                batting_agg["type"] = "batting"
+                chunks.append(batting_agg)
 
-            chunks.append(batting_agg)
-            chunks.append(pitching_agg)
+            if not pitching_agg.empty:
+                pitching_agg["period_start"] = chunk_start_str
+                pitching_agg["type"] = "pitching"
+                chunks.append(pitching_agg)
+
         except Exception as e:
             print(f"    WARNING: chunk failed: {e}")
 
@@ -203,7 +243,6 @@ def _mock_pitcher_statcast() -> dict:
 
 
 if __name__ == "__main__":
-    # Test with a small date range
     print("Testing Statcast fetch...")
     df = fetch_team_statcast("2024-04-01", "2024-04-07", as_pitcher=False)
     print(df.head())
