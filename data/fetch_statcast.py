@@ -23,7 +23,10 @@ except ImportError:
     PYBASEBALL_AVAILABLE = False
     print("WARNING: pybaseball not installed.")
 
-from data.barrel_calc import ensure_barrel_column
+try:
+    from data.barrel_calc import ensure_barrel_column
+except ModuleNotFoundError:
+    from barrel_calc import ensure_barrel_column
 
 
 # ── Team-level Statcast aggregation ───────────────────────────────────────────
