@@ -36,7 +36,8 @@ def build_pitcher_features(
     # Default features (used when pitcher is TBD or not found)
     defaults = _default_pitcher_features(prefix)
 
-    if not pitcher_name:
+    # Guard against NaN (float) or empty pitcher name
+    if not pitcher_name or not isinstance(pitcher_name, str) or pitcher_name.strip() == "":
         return defaults
 
     # Match pitcher in FanGraphs stats
@@ -73,21 +74,62 @@ def build_pitcher_features(
     return features
 
 
+def _normalize_name(name: str) -> str:
+    """Normalize a pitcher name for matching: lowercase, remove accents, strip suffixes."""
+    import unicodedata
+    # Remove accents (e.g. é → e, ñ → n)
+    name = unicodedata.normalize("NFKD", name)
+    name = "".join(c for c in name if not unicodedata.combining(c))
+    # Lowercase and strip whitespace
+    name = name.lower().strip()
+    # Remove common suffixes that cause mismatches
+    for suffix in [" jr.", " sr.", " jr", " sr", " ii", " iii"]:
+        name = name.replace(suffix, "")
+    # Normalize hyphens and apostrophes
+    name = name.replace("-", " ").replace("'", "")
+    return name.strip()
+
+
 def _match_pitcher(name: str, stats_df: pd.DataFrame) -> Optional[dict]:
     """Fuzzy-match a pitcher name to the stats DataFrame."""
     if stats_df.empty:
         return None
 
-    # Exact match first
-    match = stats_df[stats_df["pitcher_name"].str.lower() == name.lower()]
+    # Guard: name must be a non-empty string
+    if not name or not isinstance(name, str) or name.strip() == "":
+        return None
+
+    name = name.strip()
+
+    # Build normalized name column once
+    if "_name_normalized" not in stats_df.columns:
+        stats_df = stats_df.copy()
+        stats_df["_name_normalized"] = stats_df["pitcher_name"].apply(_normalize_name)
+
+    name_norm = _normalize_name(name)
+
+    # 1. Exact normalized match
+    match = stats_df[stats_df["_name_normalized"] == name_norm]
     if not match.empty:
         return match.iloc[0].to_dict()
 
-    # Last-name match
-    last_name = name.split()[-1].lower()
-    match = stats_df[stats_df["pitcher_name"].str.lower().str.endswith(last_name)]
+    # 2. Last-name normalized match
+    last_name = name_norm.split()[-1]
+    match = stats_df[stats_df["_name_normalized"].str.endswith(last_name)]
     if len(match) == 1:
         return match.iloc[0].to_dict()
+
+    # 3. First initial + last name match (e.g. "J. Verlander" vs "Justin Verlander")
+    parts = name_norm.split()
+    if len(parts) >= 2:
+        first_initial = parts[0][0]
+        last = parts[-1]
+        match = stats_df[
+            stats_df["_name_normalized"].str.startswith(first_initial) &
+            stats_df["_name_normalized"].str.endswith(last)
+        ]
+        if len(match) == 1:
+            return match.iloc[0].to_dict()
 
     return None
 
