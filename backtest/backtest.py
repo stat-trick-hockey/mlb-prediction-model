@@ -42,9 +42,9 @@ def run_backtest(
     df["game_date"] = pd.to_datetime(df["game_date"])
 
     # Build run line target
+    df = df.copy()  # defragment before adding columns
     if "target_home_score" in df.columns and "target_away_score" in df.columns:
-        df = df.copy()  # defragment before adding columns
-    df["target_runline"] = ((df["target_home_score"] - df["target_away_score"]) >= 2).astype(int)
+        df["target_runline"] = ((df["target_home_score"] - df["target_away_score"]) >= 2).astype(int)
     else:
         df["target_runline"] = df.get("target_home_win", 0)
 
