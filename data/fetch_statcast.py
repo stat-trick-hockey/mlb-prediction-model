@@ -280,8 +280,6 @@ if __name__ == "__main__":
             failed.append(season)
 
     if failed:
-        print(f"
-FAILED seasons: {failed}")
+        print("\nFAILED seasons: " + str(failed))
         import sys; sys.exit(1)
-    print("
-✓ All Statcast data fetched successfully.")
+    print("\n\u2713 All Statcast data fetched successfully.")
