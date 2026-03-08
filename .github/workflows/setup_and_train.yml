@@ -7,6 +7,10 @@ on:
         description: 'Comma-separated seasons to train on (e.g. 2022,2023,2024)'
         required: false
         default: '2022,2023,2024'
+      skip_statcast:
+        description: 'Skip Statcast fetch (if already cached in repo)'
+        required: false
+        default: 'false'
 
 permissions:
   contents: write
@@ -14,7 +18,7 @@ permissions:
 jobs:
   setup_and_train:
     runs-on: ubuntu-latest
-    timeout-minutes: 180  # 3 hours — Statcast download is slow
+    timeout-minutes: 360  # 6 hours — Statcast download for 3 seasons is slow
 
     steps:
       - name: Checkout repo
@@ -33,36 +37,44 @@ jobs:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
 
+      - name: Cache pybaseball Statcast data
+        uses: actions/cache@v3
+        with:
+          path: ~/.pybaseball/cache
+          key: pybaseball-statcast-${{ github.event.inputs.seasons }}
+          restore-keys: |
+            pybaseball-statcast-
+
       - name: Install dependencies
         run: pip install -r requirements.txt
 
       - name: Fetch FanGraphs data
-        run: python data/fetch_fangraphs.py
-        continue-on-error: false
+        run: python data/fetch_fangraphs.py --seasons "${{ github.event.inputs.seasons }}"
 
       - name: Fetch Statcast data
-        run: python data/fetch_statcast.py
-        continue-on-error: false
+        if: ${{ github.event.inputs.skip_statcast != 'true' }}
+        run: python data/fetch_statcast.py --seasons "${{ github.event.inputs.seasons }}" --chunk-days 30
+        timeout-minutes: 300  # 5 hours for Statcast
+
+      - name: Skip Statcast message
+        if: ${{ github.event.inputs.skip_statcast == 'true' }}
+        run: echo "Skipping Statcast fetch — using existing data in repo"
 
       - name: Build historical feature matrix
-        run: python features/build_feature_matrix.py
-        continue-on-error: false
+        run: python features/build_feature_matrix.py --seasons "${{ github.event.inputs.seasons }}"
 
       - name: Train O/U model
         run: python models/train_ou.py
-        continue-on-error: false
 
       - name: Train Moneyline model
         run: python models/train_moneyline.py
-        continue-on-error: false
 
       - name: Train Run Line model
         run: python models/train_runline.py
-        continue-on-error: false
 
       - name: Run backtest
         run: python backtest/backtest.py
-        continue-on-error: true  # Don't fail the whole job if backtest errors
+        continue-on-error: true
 
       - name: Commit trained models and data
         run: |
