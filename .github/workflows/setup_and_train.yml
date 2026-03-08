@@ -41,7 +41,7 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.pybaseball/cache
-          key: pybaseball-statcast-${{ github.event.inputs.seasons }}
+          key: pybaseball-statcast-${{ hashFiles('data/processed/statcast/**') || github.run_id }}
           restore-keys: |
             pybaseball-statcast-
 
