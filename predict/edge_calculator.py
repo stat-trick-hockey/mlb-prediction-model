@@ -9,8 +9,11 @@ import pandas as pd
 from typing import Optional
 
 # Minimum edge to flag as actionable
-EDGE_THRESHOLD   = 0.04   # 4%
-MAX_KELLY_FRAC   = 0.10   # Cap Kelly at 10% of bankroll
+# 5% is a realistic threshold — Vegas is accurate to ~2-3%, so 5% means
+# the model needs to meaningfully disagree with the market to flag a bet.
+# This targets ~25-35% bet rate rather than betting every game.
+EDGE_THRESHOLD   = 0.05   # 5%
+MAX_KELLY_FRAC   = 0.05   # Cap Kelly at 5% of bankroll (conservative)
 MIN_KELLY_FRAC   = 0.005  # Ignore tiny Kelly fractions
 
 
