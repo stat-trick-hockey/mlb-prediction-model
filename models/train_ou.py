@@ -126,8 +126,10 @@ def predict_ou(
     # Fitted from historical total run distributions (~2.5 run std dev)
     sigma = 2.5
     from scipy import stats
-    over_prob  = 1 - stats.norm.cdf(ou_line + 0.5, loc=pred_total, scale=sigma)
-    under_prob = stats.norm.cdf(ou_line - 0.5, loc=pred_total, scale=sigma)
+    # Guard against NaN ou_line (no odds available) — fall back to predicted total
+    safe_line  = float(ou_line) if (ou_line is not None and ou_line == ou_line) else pred_total
+    over_prob  = 1 - stats.norm.cdf(safe_line + 0.5, loc=pred_total, scale=sigma)
+    under_prob = stats.norm.cdf(safe_line - 0.5, loc=pred_total, scale=sigma)
 
     return {
         "predicted_total": round(pred_total, 2),
