@@ -11,6 +11,9 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: write
+
 jobs:
   predict:
     runs-on: ubuntu-latest
@@ -19,6 +22,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -56,16 +61,18 @@ jobs:
 
       - name: Skip message
         if: steps.season_check.outputs.status != 'regular_season' && steps.season_check.outputs.status != 'postseason' && github.event_name != 'workflow_dispatch'
-        run: echo "⚾ Not regular season (${{ steps.season_check.outputs.status }}) — skipping to preserve API rate limits"
+        run: echo "⚾ Not regular season (${{ steps.season_check.outputs.status }}) — skipping"
 
       - name: Commit predictions output
         if: steps.season_check.outputs.status == 'regular_season' || steps.season_check.outputs.status == 'postseason' || github.event_name == 'workflow_dispatch'
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Auto: predictions for ${{ github.event.inputs.date || 'today' }}"
-          file_pattern: 'predict/output/*.csv predict/output/*.json predict/output/*.txt'
-          commit_user_name: github-actions[bot]
-          commit_user_email: github-actions[bot]@users.noreply.github.com
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add predict/output/ || true
+          git diff --staged --quiet || git commit -m "Auto: predictions for ${{ github.event.inputs.date || 'today' }}"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   track_results:
     runs-on: ubuntu-latest
@@ -74,6 +81,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -95,7 +104,11 @@ jobs:
 
       - name: Commit accuracy log
         if: steps.season_check.outputs.status == 'regular_season' || steps.season_check.outputs.status == 'postseason'
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Auto: results tracking update"
-          file_pattern: 'predict/output/accuracy_log.csv'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add predict/output/accuracy_log.csv || true
+          git diff --staged --quiet || git commit -m "Auto: results tracking update"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

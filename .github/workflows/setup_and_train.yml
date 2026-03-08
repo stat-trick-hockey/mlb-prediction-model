@@ -8,6 +8,9 @@ on:
         required: false
         default: '2022,2023,2024'
 
+permissions:
+  contents: write
+
 jobs:
   setup_and_train:
     runs-on: ubuntu-latest
@@ -16,6 +19,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
@@ -60,13 +65,11 @@ jobs:
         continue-on-error: true  # Don't fail the whole job if backtest errors
 
       - name: Commit trained models and data
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Auto: initial model training complete"
-          file_pattern: |
-            models/*.pkl
-            data/processed/**/*.csv
-            backtest/results/*.png
-            backtest/results/*.csv
-          commit_user_name: github-actions[bot]
-          commit_user_email: github-actions[bot]@users.noreply.github.com
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add models/*.pkl data/processed/ backtest/results/ || true
+          git diff --staged --quiet || git commit -m "Auto: initial model training complete"
+          git push
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
