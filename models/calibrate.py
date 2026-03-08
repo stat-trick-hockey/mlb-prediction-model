@@ -35,9 +35,45 @@ def calibrate_classifier(
     Returns:
         calibrated model
     """
-    calibrated = CalibratedClassifierCV(model, method=method, cv="prefit")
-    calibrated.fit(X_cal, y_cal)
-    return calibrated
+    # Manually calibrate using isotonic regression or sigmoid on held-out set.
+    # This avoids cv="prefit" which changed behaviour across sklearn versions.
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.linear_model import LogisticRegression
+    import numpy as np
+
+    # Get raw probabilities from the trained model on the calibration set
+    raw_probs = model.predict_proba(X_cal)[:, 1]
+
+    if method == "isotonic":
+        calibrator = IsotonicRegression(out_of_bounds="clip")
+        calibrator.fit(raw_probs, y_cal)
+    else:  # sigmoid / Platt scaling
+        calibrator = LogisticRegression()
+        calibrator.fit(raw_probs.reshape(-1, 1), y_cal)
+
+    # Wrap in a lightweight class that mimics sklearn's interface
+    class CalibratedModel:
+        def __init__(self, base_model, calibrator, method):
+            self.base_model = base_model
+            self.calibrator = calibrator
+            self.method = method
+
+        def predict_proba(self, X):
+            raw = self.base_model.predict_proba(X)[:, 1]
+            if self.method == "isotonic":
+                cal = self.calibrator.predict(raw)
+            else:
+                cal = self.calibrator.predict_proba(raw.reshape(-1, 1))[:, 1]
+            cal = np.clip(cal, 0, 1)
+            return np.column_stack([1 - cal, cal])
+
+        def predict(self, X):
+            return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+        def feature_importances_(self):
+            return self.base_model.feature_importances_
+
+    return CalibratedModel(model, calibrator, method)
 
 
 def evaluate_calibration(
