@@ -28,41 +28,23 @@ except ModuleNotFoundError:
 
 # ── Team-level Statcast aggregation ───────────────────────────────────────────
 
-def fetch_team_statcast(
-    start_date: str,
-    end_date: str,
-    as_pitcher: bool = False,
-    verbose: bool = True,
-) -> pd.DataFrame:
+def _fetch_raw_statcast(start_date: str, end_date: str) -> pd.DataFrame:
     """
-    Pull raw Statcast data for a date range and aggregate by team.
-    Returns empty DataFrame if no data found (not an error).
-    Raises on unexpected failures.
+    Fetch raw Statcast data for a date range and return batted balls only.
+    Separated so save_season_statcast can call it once and aggregate both ways.
     """
     if not PYBASEBALL_AVAILABLE:
-        return _mock_team_statcast()
+        return pd.DataFrame()
 
-    if verbose:
-        print(f"    statcast({start_date} → {end_date})...", end=" ", flush=True)
-
+    print(f"    statcast({start_date} → {end_date})...", end=" ", flush=True)
     df = statcast(start_dt=start_date, end_dt=end_date, verbose=False)
 
-    if df is None:
-        if verbose: print("returned None")
+    if df is None or not isinstance(df, pd.DataFrame) or df.empty:
+        print("0 rows")
         return pd.DataFrame()
 
-    if not isinstance(df, pd.DataFrame):
-        if verbose: print(f"unexpected type: {type(df)}")
-        return pd.DataFrame()
+    print(f"{len(df)} rows")
 
-    if df.empty:
-        if verbose: print("0 rows")
-        return pd.DataFrame()
-
-    if verbose:
-        print(f"{len(df)} rows, cols: {list(df.columns[:6])}...")
-
-    # Only batted balls for quality-of-contact metrics
     if "type" not in df.columns:
         print(f"    WARNING: 'type' column missing. Available: {list(df.columns[:10])}")
         return pd.DataFrame()
@@ -71,33 +53,39 @@ def fetch_team_statcast(
     batted = df[df["type"] == "X"].copy()
 
     if batted.empty:
-        if verbose: print(f"    WARNING: 0 batted balls (type=='X') in this range")
+        print(f"    WARNING: 0 batted balls (type=='X') in this range")
         return pd.DataFrame()
 
-    if verbose:
-        print(f"    {len(batted)} batted balls")
-
-    # Assign team column
     required = {"inning_topbot", "home_team", "away_team"}
     missing = required - set(batted.columns)
     if missing:
         print(f"    WARNING: missing columns {missing}")
         return pd.DataFrame()
 
+    print(f"    {len(batted)} batted balls")
+    return batted
+
+
+def _aggregate_batted(batted: pd.DataFrame, as_pitcher: bool) -> pd.DataFrame:
+    """Aggregate batted ball DataFrame by team."""
+    if batted.empty:
+        return pd.DataFrame()
+
     if as_pitcher:
+        batted = batted.copy()
         batted["team_col"] = np.where(
             batted["inning_topbot"] == "Top",
             batted["home_team"],
             batted["away_team"]
         )
     else:
+        batted = batted.copy()
         batted["team_col"] = np.where(
             batted["inning_topbot"] == "Top",
             batted["away_team"],
             batted["home_team"]
         )
 
-    # Build aggregation dict from available columns
     agg_dict = {}
     if "estimated_woba_using_speedangle" in batted.columns:
         agg_dict["statcast_xwoba"] = ("estimated_woba_using_speedangle", "mean")
@@ -111,19 +99,35 @@ def fetch_team_statcast(
         agg_dict["statcast_avg_la"] = ("launch_angle", "mean")
 
     if not agg_dict:
-        print(f"    WARNING: no usable Statcast columns. Available: {list(batted.columns[:15])}")
         return pd.DataFrame()
 
     agg = batted.groupby("team_col").agg(**agg_dict).reset_index()
     agg = agg.rename(columns={"team_col": "team_abb"})
 
-    # Guarantee all expected output columns
     for col in ["statcast_xwoba", "statcast_barrel_pct", "statcast_hard_hit_pct",
                 "statcast_avg_ev", "statcast_avg_la", "statcast_n_batted"]:
         if col not in agg.columns:
             agg[col] = np.nan
 
     return agg
+
+
+def fetch_team_statcast(
+    start_date: str,
+    end_date: str,
+    as_pitcher: bool = False,
+    verbose: bool = True,
+) -> pd.DataFrame:
+    """
+    Pull raw Statcast data for a date range and aggregate by team.
+    Note: for bulk season fetching, use save_season_statcast() which fetches
+    each chunk once and aggregates both batting and pitching from the same pull.
+    """
+    if not PYBASEBALL_AVAILABLE:
+        return _mock_team_statcast()
+
+    batted = _fetch_raw_statcast(start_date, end_date)
+    return _aggregate_batted(batted, as_pitcher)
 
 
 def fetch_pitcher_statcast(pitcher_id: int, start_date: str, end_date: str) -> dict:
@@ -190,27 +194,32 @@ def save_season_statcast(season: int, chunk_days: int = 30) -> bool:
 
         print(f"  [{n_chunks}] {cs} → {ce}")
         try:
-            batting_agg  = fetch_team_statcast(cs, ce, as_pitcher=False, verbose=True)
-            pitching_agg = fetch_team_statcast(cs, ce, as_pitcher=True,  verbose=True)
+            # Fetch raw data ONCE, aggregate two ways — avoids double download
+            batted = _fetch_raw_statcast(cs, ce)
 
-            if not batting_agg.empty:
-                batting_agg["period_start"] = cs
-                batting_agg["type"]         = "batting"
-                chunks.append(batting_agg)
-                print(f"    ✓ batting: {len(batting_agg)} teams")
+            if batted.empty:
+                print(f"    ✗ no batted ball data for this chunk")
             else:
-                print(f"    ✗ batting: empty")
+                batting_agg  = _aggregate_batted(batted, as_pitcher=False)
+                pitching_agg = _aggregate_batted(batted, as_pitcher=True)
 
-            if not pitching_agg.empty:
-                pitching_agg["period_start"] = cs
-                pitching_agg["type"]         = "pitching"
-                chunks.append(pitching_agg)
-                print(f"    ✓ pitching: {len(pitching_agg)} teams")
-            else:
-                print(f"    ✗ pitching: empty")
+                if not batting_agg.empty:
+                    batting_agg["period_start"] = cs
+                    batting_agg["type"]         = "batting"
+                    chunks.append(batting_agg)
+                    print(f"    ✓ batting: {len(batting_agg)} teams")
+                else:
+                    print(f"    ✗ batting: empty after aggregation")
+
+                if not pitching_agg.empty:
+                    pitching_agg["period_start"] = cs
+                    pitching_agg["type"]         = "pitching"
+                    chunks.append(pitching_agg)
+                    print(f"    ✓ pitching: {len(pitching_agg)} teams")
+                else:
+                    print(f"    ✗ pitching: empty after aggregation")
 
         except Exception as e:
-            # Print full traceback so we know exactly what failed
             import traceback
             print(f"    ERROR in chunk {cs} → {ce}:")
             traceback.print_exc()
