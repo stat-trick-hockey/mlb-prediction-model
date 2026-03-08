@@ -1,4 +1,4 @@
-# MLB Prediction Model
+  ### MLB Prediction Model
 
 A full-stack MLB betting prediction system with three separate models (moneyline, run line, O/U), Statcast feature engineering, walk-forward backtesting, and automated daily predictions via GitHub Actions.
 
