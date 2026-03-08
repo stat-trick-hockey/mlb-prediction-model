@@ -9,9 +9,42 @@ import numpy as np
 import pandas as pd
 import joblib
 import os
-from sklearn.calibration import CalibratedClassifierCV, calibration_curve
+from sklearn.calibration import calibration_curve
+from sklearn.isotonic import IsotonicRegression
+from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import log_loss, brier_score_loss
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+
+
+class CalibratedModel:
+    """
+    A version-safe calibrated classifier wrapper.
+    Defined at module level so joblib can pickle it cleanly.
+    Wraps any sklearn-compatible classifier with isotonic or sigmoid calibration.
+    """
+
+    def __init__(self, base_model, calibrator, method: str):
+        self.base_model  = base_model
+        self.calibrator  = calibrator
+        self.method      = method
+
+    def predict_proba(self, X) -> np.ndarray:
+        raw = self.base_model.predict_proba(X)[:, 1]
+        if self.method == "isotonic":
+            cal = self.calibrator.predict(raw)
+        else:
+            cal = self.calibrator.predict_proba(raw.reshape(-1, 1))[:, 1]
+        cal = np.clip(cal, 0, 1)
+        return np.column_stack([1 - cal, cal])
+
+    def predict(self, X) -> np.ndarray:
+        return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
+    @property
+    def feature_importances_(self) -> np.ndarray:
+        return self.base_model.feature_importances_
 
 
 def calibrate_classifier(
@@ -19,59 +52,29 @@ def calibrate_classifier(
     X_cal: pd.DataFrame,
     y_cal: pd.Series,
     method: str = "isotonic",
-    cv: int = 5,
-) -> CalibratedClassifierCV:
+) -> CalibratedModel:
     """
-    Wrap a trained classifier with probability calibration.
-    Uses isotonic regression (better for larger datasets, nonlinear).
+    Calibrate a trained classifier on a held-out calibration set.
+    Uses isotonic regression (nonlinear, better for larger sets) or
+    sigmoid / Platt scaling (linear, better for small sets).
 
     Args:
-        model: trained XGBClassifier
-        X_cal: calibration set features (held-out from training)
-        y_cal: calibration set targets
-        method: "isotonic" or "sigmoid" (Platt scaling)
-        cv: "prefit" uses X_cal directly; int uses cross-val on X_cal
+        model:  trained XGBClassifier (already fitted)
+        X_cal:  held-out calibration features
+        y_cal:  held-out calibration targets
+        method: "isotonic" or "sigmoid"
 
     Returns:
-        calibrated model
+        CalibratedModel instance — same predict_proba / predict interface
     """
-    # Manually calibrate using isotonic regression or sigmoid on held-out set.
-    # This avoids cv="prefit" which changed behaviour across sklearn versions.
-    from sklearn.isotonic import IsotonicRegression
-    from sklearn.linear_model import LogisticRegression
-    import numpy as np
-
-    # Get raw probabilities from the trained model on the calibration set
     raw_probs = model.predict_proba(X_cal)[:, 1]
 
     if method == "isotonic":
         calibrator = IsotonicRegression(out_of_bounds="clip")
         calibrator.fit(raw_probs, y_cal)
-    else:  # sigmoid / Platt scaling
+    else:
         calibrator = LogisticRegression()
         calibrator.fit(raw_probs.reshape(-1, 1), y_cal)
-
-    # Wrap in a lightweight class that mimics sklearn's interface
-    class CalibratedModel:
-        def __init__(self, base_model, calibrator, method):
-            self.base_model = base_model
-            self.calibrator = calibrator
-            self.method = method
-
-        def predict_proba(self, X):
-            raw = self.base_model.predict_proba(X)[:, 1]
-            if self.method == "isotonic":
-                cal = self.calibrator.predict(raw)
-            else:
-                cal = self.calibrator.predict_proba(raw.reshape(-1, 1))[:, 1]
-            cal = np.clip(cal, 0, 1)
-            return np.column_stack([1 - cal, cal])
-
-        def predict(self, X):
-            return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
-
-        def feature_importances_(self):
-            return self.base_model.feature_importances_
 
     return CalibratedModel(model, calibrator, method)
 
@@ -86,18 +89,15 @@ def evaluate_calibration(
 ) -> dict:
     """
     Evaluate probability calibration quality.
-    Returns dict of metrics and optionally plots calibration curve.
+    Returns dict of metrics and optionally saves a calibration plot.
     """
     probs = model.predict_proba(X)[:, 1]
 
     ll    = log_loss(y, probs)
     brier = brier_score_loss(y, probs)
+    ece   = _expected_calibration_error(y.values, probs, n_bins)
 
-    # Calibration curve
     fraction_pos, mean_pred = calibration_curve(y, probs, n_bins=n_bins)
-
-    # ECE (expected calibration error)
-    ece = _expected_calibration_error(y.values, probs, n_bins)
 
     print(f"\n── {model_name} Calibration ──")
     print(f"  Log loss:  {ll:.4f}")
@@ -112,24 +112,23 @@ def evaluate_calibration(
         "log_loss": ll,
         "brier":    brier,
         "ece":      ece,
-        "accuracy": (model.predict(X) == y).mean(),
+        "accuracy": float((model.predict(X) == y).mean()),
     }
 
 
-def _expected_calibration_error(y_true: np.ndarray, probs: np.ndarray, n_bins: int) -> float:
-    """Calculate expected calibration error (ECE)."""
-    bins  = np.linspace(0, 1, n_bins + 1)
-    ece   = 0.0
-    n     = len(y_true)
-
+def _expected_calibration_error(
+    y_true: np.ndarray,
+    probs: np.ndarray,
+    n_bins: int,
+) -> float:
+    bins = np.linspace(0, 1, n_bins + 1)
+    ece  = 0.0
+    n    = len(y_true)
     for i in range(n_bins):
         mask = (probs >= bins[i]) & (probs < bins[i + 1])
         if mask.sum() == 0:
             continue
-        bin_conf = probs[mask].mean()
-        bin_acc  = y_true[mask].mean()
-        ece += (mask.sum() / n) * abs(bin_conf - bin_acc)
-
+        ece += (mask.sum() / n) * abs(probs[mask].mean() - y_true[mask].mean())
     return ece
 
 
@@ -139,10 +138,8 @@ def _plot_calibration_curve(
     probs: np.ndarray,
     model_name: str,
 ):
-    """Plot calibration curve and probability distribution."""
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
 
-    # Calibration curve
     ax1.plot([0, 1], [0, 1], "k--", label="Perfectly calibrated")
     ax1.plot(mean_pred, fraction_pos, "s-", label=model_name, color="#E63946")
     ax1.set_xlabel("Mean predicted probability")
@@ -151,7 +148,6 @@ def _plot_calibration_curve(
     ax1.legend()
     ax1.grid(True, alpha=0.3)
 
-    # Probability distribution
     ax2.hist(probs, bins=30, color="#457B9D", alpha=0.7, edgecolor="white")
     ax2.set_xlabel("Predicted probability")
     ax2.set_ylabel("Count")
