@@ -246,6 +246,42 @@ def _mock_pitcher_statcast() -> dict:
 
 
 if __name__ == "__main__":
-    print("Testing Statcast fetch...")
-    df = fetch_team_statcast("2024-04-01", "2024-04-07", as_pitcher=False)
-    print(df.head())
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seasons", default="2022,2023,2024",
+                        help="Comma-separated seasons to fetch")
+    parser.add_argument("--chunk-days", type=int, default=30)
+    parser.add_argument("--test", action="store_true",
+                        help="Quick test: fetch one week of data only")
+    args = parser.parse_args()
+
+    if args.test:
+        print("Running quick test fetch (2024-04-01 → 2024-04-07)...")
+        df = fetch_team_statcast("2024-04-01", "2024-04-07", as_pitcher=False)
+        print(df.head())
+        import sys; sys.exit(0)
+
+    seasons = [int(s.strip()) for s in args.seasons.split(",")]
+    print(f"Fetching Statcast data for seasons: {seasons}")
+    print(f"WARNING: This will take 45-90 minutes for 3 full seasons.")
+    failed = []
+    for season in seasons:
+        try:
+            save_season_statcast(season, chunk_days=args.chunk_days)
+            # Verify output was actually written
+            import os
+            path = f"data/processed/statcast/{season}/team_statcast.csv"
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Output file missing after fetch: {path}")
+            rows = pd.read_csv(path)
+            print(f"  ✓ Verified: {len(rows)} rows in {path}")
+        except Exception as e:
+            print(f"  ERROR fetching Statcast for {season}: {e}")
+            failed.append(season)
+
+    if failed:
+        print(f"
+FAILED seasons: {failed}")
+        import sys; sys.exit(1)
+    print("
+✓ All Statcast data fetched successfully.")
