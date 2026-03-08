@@ -168,8 +168,18 @@ def run_daily_predictions(
     # JSON output for downstream use (Instagram cards, Tidbyt, etc.)
     output_json = f"{output_dir}/{game_date}_predictions.json"
     slim_results = _slim_results_for_json(results)
+    # Sanitize NaN/Inf values — not valid JSON, must be null
+    def sanitize(obj):
+        if isinstance(obj, list):
+            return [sanitize(i) for i in obj]
+        if isinstance(obj, dict):
+            return {k: sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, float) and (obj != obj or obj == float('inf') or obj == float('-inf')):
+            return None
+        return obj
+
     with open(output_json, "w") as f:
-        json.dump(slim_results, f, indent=2, default=str)
+        json.dump(sanitize(slim_results), f, indent=2, default=str)
     print(f"  Saved JSON to {output_json}")
 
     # Print report
