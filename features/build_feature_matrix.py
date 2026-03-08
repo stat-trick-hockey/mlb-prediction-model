@@ -126,6 +126,9 @@ def build_feature_matrix_for_date(
     """
     Build feature matrix for all games in a schedule DataFrame.
     """
+    # Clean NaN values before feature building
+    schedule_df = _clean_schedule(schedule_df)
+
     rows = []
     for _, game in schedule_df.iterrows():
         weather_row = None
@@ -185,6 +188,9 @@ def build_historical_feature_matrix(
         schedule = fetch_season_schedule(season)
         schedule = schedule[schedule["status"] == "Final"]
 
+        # Clean NaN pitcher names and team abbreviations before feature building
+        schedule = _clean_schedule(schedule)
+
         # Build results log from schedule
         results_df = _build_results_log(schedule)
 
@@ -218,6 +224,40 @@ def build_historical_feature_matrix(
     print(f"\n✓ Training matrix saved to {output_path} ({len(full_df)} rows, {len(full_df.columns)} cols)")
 
     return full_df
+
+
+def _clean_schedule(schedule: pd.DataFrame) -> pd.DataFrame:
+    """
+    Clean NaN values in schedule DataFrame before feature building.
+    Prevents AttributeError when pitcher names or team abbreviations are NaN.
+    """
+    schedule = schedule.copy()
+
+    # Pitcher names — NaN means TBD, replace with empty string
+    for col in ["home_pitcher_name", "away_pitcher_name"]:
+        if col in schedule.columns:
+            schedule[col] = schedule[col].fillna("").astype(str).str.strip()
+
+    # Pitcher IDs — NaN means unknown
+    for col in ["home_pitcher_id", "away_pitcher_id"]:
+        if col in schedule.columns:
+            schedule[col] = pd.to_numeric(schedule[col], errors="coerce")
+
+    # Team abbreviations — should never be NaN but guard anyway
+    for col in ["home_team_abb", "away_team_abb"]:
+        if col in schedule.columns:
+            schedule[col] = schedule[col].fillna("UNK").astype(str).str.strip()
+
+    # Scores — NaN for unplayed games
+    for col in ["home_score", "away_score"]:
+        if col in schedule.columns:
+            schedule[col] = pd.to_numeric(schedule[col], errors="coerce")
+
+    # Venue
+    if "venue_name" in schedule.columns:
+        schedule["venue_name"] = schedule["venue_name"].fillna("").astype(str)
+
+    return schedule
 
 
 def _build_results_log(schedule: pd.DataFrame) -> pd.DataFrame:
@@ -259,6 +299,7 @@ def get_model_feature_cols(df: pd.DataFrame) -> list:
         "home_pitcher", "away_pitcher", "venue",
         "target_home_win", "target_total_runs",
         "target_home_score", "target_away_score",
+        "target_runline",  # must exclude — leaks the answer into run line model
     }
     return [
         c for c in df.columns
@@ -267,8 +308,19 @@ def get_model_feature_cols(df: pd.DataFrame) -> list:
 
 
 if __name__ == "__main__":
-    from config import TRAINING_SEASONS
-    print("Building historical feature matrix...")
-    df = build_historical_feature_matrix(TRAINING_SEASONS)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--seasons", default=None,
+                        help="Comma-separated seasons (default: config.TRAINING_SEASONS)")
+    args = parser.parse_args()
+
+    if args.seasons:
+        seasons = [int(s.strip()) for s in args.seasons.split(",")]
+    else:
+        from config import TRAINING_SEASONS
+        seasons = TRAINING_SEASONS
+
+    print(f"Building historical feature matrix for seasons: {seasons}")
+    df = build_historical_feature_matrix(seasons)
     if not df.empty:
-        print(f"Feature columns: {get_model_feature_cols(df)[:10]}...")
+        print(f"Done. {len(df)} rows, {len(get_model_feature_cols(df))} feature columns.")
