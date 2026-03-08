@@ -652,20 +652,37 @@
   </main>
 
   <script>
+    // ── Base path (handles GitHub Pages subdirectory deployment) ────────────
+    const BASE = (() => {
+      const p = window.location.pathname;
+      // If served from /repo-name/, strip the trailing page and keep the base
+      const parts = p.split('/').filter(Boolean);
+      // If the last part looks like a file, remove it
+      const base = p.endsWith('/') ? p : p.substring(0, p.lastIndexOf('/') + 1);
+      return base;
+    })();
+
+    function assetUrl(path) {
+      return BASE + path;
+    }
+
     // ── Date display ──────────────────────────────────────────────────────────
     const today = new Date();
     const dateStr = today.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
     document.getElementById('dateDisplay').textContent = dateStr.toUpperCase();
 
     // ── Fetch predictions JSON ────────────────────────────────────────────────
-    // Looks for today's prediction file committed by GitHub Actions
     function getTodayDateStr() {
-      return today.toISOString().split('T')[0]; // YYYY-MM-DD
+      // Use local date, not UTC — toISOString() can return yesterday for UTC-offset timezones
+      const y = today.getFullYear();
+      const m = String(today.getMonth() + 1).padStart(2, '0');
+      const d = String(today.getDate()).padStart(2, '0');
+      return `${y}-${m}-${d}`;
     }
 
     async function loadPredictions() {
       const dateKey = getTodayDateStr();
-      const url = `predict/output/${dateKey}_predictions.json`;
+      const url = assetUrl(`predict/output/${dateKey}_predictions.json`);
 
       try {
         const resp = await fetch(url);
@@ -678,9 +695,12 @@
         // Try yesterday's file as fallback
         const yesterday = new Date(today);
         yesterday.setDate(yesterday.getDate() - 1);
-        const yKey = yesterday.toISOString().split('T')[0];
+        const yy = yesterday.getFullYear();
+          const ym = String(yesterday.getMonth() + 1).padStart(2, '0');
+          const yd = String(yesterday.getDate()).padStart(2, '0');
+          const yKey = `${yy}-${ym}-${yd}`;
         try {
-          const resp2 = await fetch(`predict/output/${yKey}_predictions.json`);
+          const resp2 = await fetch(assetUrl(`predict/output/${yKey}_predictions.json`));
           if (!resp2.ok) throw new Error('No recent predictions found');
           const data = await resp2.json();
           renderGames(data);
@@ -697,7 +717,7 @@
 
     async function loadAccuracyLog() {
       try {
-        const resp = await fetch('predict/output/accuracy_log.csv');
+        const resp = await fetch(assetUrl('predict/output/accuracy_log.csv'));
         if (!resp.ok) return;
         const text = await resp.text();
         const rows = text.trim().split('\n').slice(1); // skip header
