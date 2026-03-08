@@ -190,11 +190,17 @@ def _predict_period(
         # realistic odds so we don't assume a fixed price for every game
         game_dict = game.to_dict()
         if pd.isna(game_dict.get("ml_home")):
-            # Convert model prob back to odds with typical 4.5% vig
-            home_vig_prob = home_win_prob * 1.045
-            away_vig_prob = (1 - home_win_prob) * 1.045
-            ml_home = -round(home_vig_prob / (1 - home_vig_prob) * 100) if home_win_prob > 0.5 else round((1 - home_vig_prob) / home_vig_prob * 100)
-            ml_away = -round(away_vig_prob / (1 - away_vig_prob) * 100) if home_win_prob < 0.5 else round((1 - away_vig_prob) / away_vig_prob * 100)
+            # Build realistic odds from model prob + 4.5% vig
+            # Clamp prob to avoid division by zero at extremes
+            hp = float(np.clip(home_win_prob, 0.05, 0.95))
+            ap = 1.0 - hp
+            # Add vig by scaling each side up proportionally
+            total_vig = 1.045
+            hp_vig = hp * total_vig
+            ap_vig = ap * total_vig
+            # Convert to American odds
+            ml_home = -round(hp_vig / (1 - hp_vig) * 100) if hp >= 0.5 else round((1 - hp_vig) / hp_vig * 100)
+            ml_away = -round(ap_vig / (1 - ap_vig) * 100) if ap >= 0.5 else round((1 - ap_vig) / ap_vig * 100)
             game_dict["ml_home"]      = float(ml_home)
             game_dict["ml_away"]      = float(ml_away)
             game_dict["ou_total"]     = 9.0
